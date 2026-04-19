@@ -3,15 +3,34 @@
 
 import copy
 import os
+import re
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor, QFont
 from PyQt5.QtWidgets import (
-    QAction, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget
+    QAbstractItemView, QAction, QComboBox, QDialog, QDialogButtonBox,
+    QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QLineEdit, QMenu, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 )
+
+from app.dialogs.filename_editor import FilenameEditorDialog
+
+# 扩展名判定：最后一个 `.` 之后是 1~6 位字母/数字（与 filename_editor 保持一致）
+_EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,6}$")
+
+
+def _ext_dot_index(name: str) -> int:
+    """返回 ``name`` 中扩展名点号的索引；没有扩展名时返回 -1。"""
+    if not name:
+        return -1
+    m = _EXT_RE.search(name)
+    if not m:
+        return -1
+    dot_idx = m.start()
+    if dot_idx == 0:
+        return -1
+    return dot_idx
 
 
 ROLE_IS_STANDARD = Qt.UserRole + 1  # 是否来自标准模板（不可删除）
@@ -84,10 +103,10 @@ class TemplateEditorDialog(QDialog):
 
         # 功能 A：提示文字
         hint_label = QLabel(
-            "💡 想改文件名？用上面的「常用格式」下拉框最快——选格式、输前缀就行。"
-            "也可以点占位符按钮插入，或者双击文件名直接编辑。"
+            "💡 如需一次性修改多个占位符，建议点击下方「✎ 改名...」按钮获得更好体验；"
+            "也可以使用下方快捷按钮或「常用格式」下拉框。"
         )
-        hint_label.setStyleSheet("color:#888; font-size:12px;")
+        hint_label.setObjectName("HintLabel")
         hint_label.setWordWrap(True)
         right.addWidget(hint_label)
 
@@ -104,15 +123,11 @@ class TemplateEditorDialog(QDialog):
         ]
         for text, highlight in placeholder_defs:
             btn = QPushButton(text)
-            btn.setObjectName("SecondaryButton" if not highlight else "")
-            btn.setFixedHeight(26)
-            if highlight:
-                btn.setStyleSheet(
-                    "background:#1976D2;color:white;"
-                    "font-weight:bold;padding:2px 8px;border-radius:4px;"
-                )
-            else:
-                btn.setStyleSheet("padding:2px 6px;font-size:12px;")
+            # 非高亮按钮使用次要样式；高亮按钮使用默认主按钮样式
+            if not highlight:
+                btn.setObjectName("SecondaryButton")
+            # 关键修复：点击按钮不再抢走单元格焦点，支持连续插入
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.clicked.connect(
                 lambda _=False, t=text: self._insert_placeholder(t))
             quick_row.addWidget(btn)
@@ -141,6 +156,11 @@ class TemplateEditorDialog(QDialog):
         self.tbl.setHorizontalHeaderLabels(["文件名 (filename)", "来源 (source)",
                                              "模板文件 (file_template)"])
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 整行选中，便于"改名"按钮识别目标行
+        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        # 保留默认编辑触发（双击/F2/敲字母）——"文件名"列的 item
+        # 我们会在填充时去掉 ItemIsEditable 标记，改用 FilenameEditorDialog
+        self.tbl.cellDoubleClicked.connect(self._on_cell_double_clicked)
         right.addWidget(self.tbl, 1)
 
         row_ops = QHBoxLayout()
@@ -148,8 +168,13 @@ class TemplateEditorDialog(QDialog):
         b_add.setObjectName("SecondaryButton")
         b_add.clicked.connect(self._add_ref)
         b_del = QPushButton("- 删除选中")
-        b_del.setObjectName("SecondaryButton")
+        b_del.setObjectName("DangerButton")
         b_del.clicked.connect(self._del_ref)
+        # ✎ 改名...：弹出 FilenameEditorDialog
+        b_rename = QPushButton("✎ 改名...")
+        b_rename.setObjectName("SecondaryButton")
+        b_rename.setToolTip("打开文件名编辑器，可套用常用格式、插入占位符或自由编辑")
+        b_rename.clicked.connect(self._open_filename_editor)
         # 功能 E：浏览选择模板文件
         b_browse_tpl = QPushButton("📂 选择模板文件")
         b_browse_tpl.setObjectName("SecondaryButton")
@@ -158,6 +183,7 @@ class TemplateEditorDialog(QDialog):
         b_apply.clicked.connect(self._apply_refs_to_node)
         row_ops.addWidget(b_add)
         row_ops.addWidget(b_del)
+        row_ops.addWidget(b_rename)
         row_ops.addWidget(b_browse_tpl)
         row_ops.addStretch(1)
         row_ops.addWidget(b_apply)
@@ -230,29 +256,31 @@ class TemplateEditorDialog(QDialog):
         for rf in refs:
             r = self.tbl.rowCount()
             self.tbl.insertRow(r)
-            self.tbl.setItem(r, 0, QTableWidgetItem(rf.get("filename", "")))
+            fn_item = QTableWidgetItem(rf.get("filename", ""))
+            # 文件名列禁用内联编辑——改用 FilenameEditorDialog
+            fn_item.setFlags(fn_item.flags() & ~Qt.ItemIsEditable)
+            self.tbl.setItem(r, 0, fn_item)
             self.tbl.setItem(r, 1, QTableWidgetItem(rf.get("source", "")))
             self.tbl.setItem(r, 2, QTableWidgetItem(rf.get("file_template") or ""))
 
     def _add_ref(self):
         r = self.tbl.rowCount()
         self.tbl.insertRow(r)
-        self.tbl.setItem(r, 0, QTableWidgetItem("新文件-<订单号>.xlsx"))
+        fn_item = QTableWidgetItem("新文件-<订单号>.xlsx")
+        fn_item.setFlags(fn_item.flags() & ~Qt.ItemIsEditable)
+        self.tbl.setItem(r, 0, fn_item)
         self.tbl.setItem(r, 1, QTableWidgetItem("自制"))
         self.tbl.setItem(r, 2, QTableWidgetItem(""))
+        self.tbl.selectRow(r)
 
     def _del_ref(self):
         rows = sorted({i.row() for i in self.tbl.selectedIndexes()}, reverse=True)
         for r in rows:
             self.tbl.removeRow(r)
 
-    # 功能 B：占位符快捷插入
+    # 功能 B：占位符快捷插入（已修复：自动识别扩展名，插到点号之前）
     def _insert_placeholder(self, placeholder: str):
-        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
-        if rows:
-            r = rows[0].row()
-        else:
-            r = self.tbl.currentRow()
+        r = self._current_ref_row()
         if r < 0:
             QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
             return
@@ -260,16 +288,25 @@ class TemplateEditorDialog(QDialog):
         if item is None:
             item = QTableWidgetItem("")
             self.tbl.setItem(r, 0, item)
-        new_text = (item.text() or "") + placeholder
+        old_text = item.text() or ""
+        dot_idx = _ext_dot_index(old_text)
+        if dot_idx >= 0:
+            new_text = old_text[:dot_idx] + placeholder + old_text[dot_idx:]
+        else:
+            new_text = old_text + placeholder
         item.setText(new_text)
+
+    def _current_ref_row(self) -> int:
+        """返回 ref_files 表格中当前选中行（没有返回 -1）。"""
+        sm = self.tbl.selectionModel()
+        rows = sm.selectedRows() if sm else []
+        if rows:
+            return rows[0].row()
+        return self.tbl.currentRow()
 
     # 功能 B：常用格式一键应用
     def _apply_format(self):
-        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
-        if rows:
-            r = rows[0].row()
-        else:
-            r = self.tbl.currentRow()
+        r = self._current_ref_row()
         if r < 0:
             QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
             return
@@ -291,13 +328,41 @@ class TemplateEditorDialog(QDialog):
         else:
             item.setText(new_name)
 
+    # ✎ 改名...：弹出 FilenameEditorDialog
+    def _open_filename_editor(self, row: int = -1):
+        """打开文件名编辑器。``row=-1`` 表示取当前选中行。"""
+        if row is None or row < 0:
+            row = self._current_ref_row()
+        if row < 0:
+            QMessageBox.information(self, "提示", "请先选中一行")
+            return
+        item = self.tbl.item(row, 0)
+        current_name = item.text() if item else ""
+        # 读取"来源"作为行信息提示
+        src_item = self.tbl.item(row, 1)
+        row_info = src_item.text() if src_item else ""
+        dlg = FilenameEditorDialog(
+            current_name, parent=self, row_info=row_info
+        )
+        if dlg.exec_() == QDialog.Accepted:
+            new_name = dlg.result_filename()
+            if item is None:
+                self.tbl.setItem(row, 0, QTableWidgetItem(new_name))
+            else:
+                item.setText(new_name)
+
+    def _on_cell_double_clicked(self, row: int, col: int):
+        """双击"文件名"列：弹出 FilenameEditorDialog 取代默认内联编辑。
+        双击其他列保持默认内联编辑体验。"""
+        if col != 0:
+            return
+        # 阻止默认的编辑状态
+        self.tbl.closePersistentEditor(self.tbl.item(row, col))
+        self._open_filename_editor(row)
+
     # 功能 E：浏览并选择模板文件
     def _browse_template_file(self):
-        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
-        if rows:
-            r = rows[0].row()
-        else:
-            r = self.tbl.currentRow()
+        r = self._current_ref_row()
         if r < 0:
             QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
             return
