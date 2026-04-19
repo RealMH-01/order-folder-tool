@@ -12,6 +12,8 @@ from PyQt5.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout
                              QLabel, QLineEdit, QPushButton, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout)
 
+from ..core import folder_builder
+
 
 COLOR_GREEN = "#4CAF50"
 COLOR_BLUE = "#2196F3"
@@ -22,12 +24,15 @@ class ScanPreviewDialog(QDialog):
     """扫描预览对话框"""
 
     def __init__(self, base_path, template_folders, extras,
-                 parent=None, display_path: str = None):
+                 parent=None, display_path: str = None,
+                 ctx: dict = None):
         """
         base_path: 客户目录（不含订单号），是 compare_with_existing 使用的基础。
         display_path: 用户在顶部"目标路径"输入框中看到的完整订单文件夹路径
                      （客户目录 + 订单号）。如果用户修改了该路径，
                      get_target_path() 将返回修改后的完整订单路径。
+        ctx: 占位符上下文字典。传入后，预览中文件名会显示替换后的真实名字
+             （例如 <订单号> → XS-TEST001NH）。为 None 时保留原始占位符。
         """
         super().__init__(parent)
         self.setWindowTitle("创建预览")
@@ -37,6 +42,7 @@ class ScanPreviewDialog(QDialog):
         self._display_path = display_path or base_path
         self._template_folders = template_folders
         self._extras = extras
+        self._ctx = ctx or {}
         self._build_ui()
         self._populate()
 
@@ -140,6 +146,9 @@ class ScanPreviewDialog(QDialog):
             # 列出 ref_files
             for rf in it.get("ref_files", []):
                 fname = rf.get("filename", "")
+                # 功能 A：若传入 ctx，则显示替换后的真实文件名
+                if self._ctx:
+                    fname = folder_builder.replace_placeholders(fname, self._ctx)
                 has_tpl = "（有模板）" if rf.get("file_template") else ""
                 f_item = QTreeWidgetItem([f"   📄 {fname}{has_tpl}", "", rf.get("source", "")])
                 f_item.setForeground(0, QBrush(QColor("#555555")))
@@ -148,6 +157,8 @@ class ScanPreviewDialog(QDialog):
         # 根节点的 ref_files 也要展示
         for rf in root_node.get("ref_files", []):
             fname = rf.get("filename", "")
+            if self._ctx:
+                fname = folder_builder.replace_placeholders(fname, self._ctx)
             has_tpl = "（有模板）" if rf.get("file_template") else ""
             f_item = QTreeWidgetItem([f"   📄 {fname}{has_tpl}", "", rf.get("source", "")])
             f_item.setForeground(0, QBrush(QColor("#555555")))

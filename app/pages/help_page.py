@@ -133,6 +133,26 @@ def _build_help_html() -> str:
     如果你之前已经手动创建过这个订单的部分文件夹，程序<b>只会补建缺少的部分</b>，
     不会覆盖或删除已有内容。请放心使用。</div>
 
+    <h3>整理文件夹（替换旧文件）</h3>
+    <p>创建订单后，你的实际工作流程通常是：</p>
+    <ol>
+      <li>程序创建好文件夹和空白模板文件（文件名带 <code>_对照</code> 后缀）。</li>
+      <li>你手动复制上一票的文件（CI、PL等）到新订单文件夹里。</li>
+      <li><b>对照着 <code>_对照</code> 文件</b>，修改上一票文件里的内容。</li>
+      <li>改完后，点 <span class="btn">🧹 整理文件夹</span>。</li>
+    </ol>
+    <p>程序会自动帮你：</p>
+    <ul>
+      <li><b>删除所有带 <code>_对照</code> 的文件</b></li>
+      <li><b>按模板命名规则给剩下的文件重命名</b></li>
+    </ul>
+    <div class="tip"><b>举例：</b>模板定义 SD 文件夹下有 <code>CI-&lt;订单号&gt;.xlsx</code>，
+    新订单号 <code>XS-NEW001NH</code>。文件夹里有：<br>
+    · <code>CI-XS-NEW001NH_对照.xlsx</code>（空白模板）→ 删除<br>
+    · <code>CI-XS-OLD001NH.xlsx</code>（上一票文件，已改好）→ 程序识别为 CI 文件，
+    重命名为 <code>CI-XS-NEW001NH.xlsx</code></div>
+    <div class="warn"><b>重要：</b>执行前会逐项展示确认，不会不经你同意就操作。</div>
+
     <h3>目标路径是如何构造的？</h3>
     <p>程序会按以下规则拼出订单文件夹的完整路径：</p>
     <pre>&lt;根目录&gt;/1订单/&lt;业务员&gt;/[&lt;中间层&gt;/]&lt;客户名&gt;/&lt;订单号&gt;/</pre>
@@ -197,6 +217,82 @@ def _build_help_html() -> str:
       程序会<b>自动</b>使用这个专属模板。</p>
 
     <div class="warn"><b>注意：</b>公司标准模板<b>不能删除</b>，只能在其基础上另存新模板。</div>
+
+    <h3>自定义文件命名规则</h3>
+    <p>程序创建订单时，会自动给每个文件取名（比如 <code>CI-XS-GAM2508056NH.xlsx</code>）。
+    如果你想改变某个文件的命名方式，可以按以下步骤操作：</p>
+
+    <h3>方法一：用常用格式快速命名（最简单，推荐）</h3>
+    <p>适合公司标准的「前缀-订单号」命名方式，比如 CI-XXX、PL-XXX、CG-XXX。</p>
+    <ol>
+      <li>打开模板编辑器（在「模板管理」里选一个模板点编辑）。</li>
+      <li>在左边的文件夹树中，<b>点击</b>你要改的那个文件夹（比如「SD」）。</li>
+      <li>右边会显示这个文件夹下所有文件的列表。</li>
+      <li>在列表中<b>点一下</b>你要改名的那个文件（让它被选中，变成蓝色高亮）。</li>
+      <li>看右边表格上方，找到<b>「常用格式」下拉框</b>。</li>
+      <li>从下拉框里选一个格式，比如 <code>前缀-&lt;订单号&gt;.xlsx</code>。</li>
+      <li>点旁边的 <span class="btn">应用格式</span> 按钮。</li>
+      <li>会弹出一个小窗口问你：<b>「请输入前缀」</b>。</li>
+      <li>输入你想要的前缀，比如输入 <code>CI</code>，然后点确定。</li>
+      <li>文件名就自动变成了 <code>CI-&lt;订单号&gt;.xlsx</code>。</li>
+      <li>最后点 <span class="btn">✔ 应用修改到当前文件夹</span>，再点 <span class="btn">保存</span>。</li>
+      <li>以后创建订单时，程序会自动把 <code>&lt;订单号&gt;</code> 替换成真实的订单号，
+          变成 <code>CI-XS-GAM2508056NH.xlsx</code>。</li>
+    </ol>
+    <div class="tip"><b>总结：</b>选格式 → 输前缀（两个字母）→ 搞定。全程不到 5 秒。</div>
+
+    <h3>方法二：用按钮插入占位符（稍微复杂，适合特殊命名需求）</h3>
+    <p>如果你想要的文件名不在常用格式里，比如想叫
+    <code>发票-&lt;订单号&gt;-&lt;客户名称&gt;.xlsx</code>，可以这样做：</p>
+    <ol>
+      <li>同样在模板编辑器里，选中要改的文件。</li>
+      <li><b>双击</b>文件名那一格（第一列），它会变成可编辑状态。</li>
+      <li>先把里面的内容清空，然后手动输入你想要的固定部分，比如输入 <code>发票-</code>。</li>
+      <li>然后看表格上方，有一排小按钮：
+          <span class="btn">&lt;订单号&gt;</span>
+          <span class="btn">&lt;客户名称&gt;</span>
+          <span class="btn">&lt;客户PO号&gt;</span> 等等。</li>
+      <li>点一下 <span class="btn">&lt;订单号&gt;</span> 按钮，
+          文件名自动变成 <code>发票-&lt;订单号&gt;</code>。</li>
+      <li>再手动输入一个 <code>-</code>（横杠）。</li>
+      <li>再点 <span class="btn">&lt;客户名称&gt;</span> 按钮，
+          文件名变成 <code>发票-&lt;订单号&gt;-&lt;客户名称&gt;</code>。</li>
+      <li>最后手动输入后缀名 <code>.xlsx</code>，
+          完整结果就是 <code>发票-&lt;订单号&gt;-&lt;客户名称&gt;.xlsx</code>。</li>
+      <li>点 <span class="btn">✔ 应用修改到当前文件夹</span>，再点 <span class="btn">保存</span>。</li>
+      <li>以后创建订单时就会自动变成
+          <code>发票-XS-GAM2508056NH-BAKER HUGHES.xlsx</code>。</li>
+    </ol>
+    <div class="note"><b>什么是占位符？</b>就是用尖括号包起来的变量名，比如 <code>&lt;订单号&gt;</code>。
+    你不需要记住它们怎么写，<b>直接点按钮就行</b>，程序会自动帮你插入。
+    创建订单的时候，程序会把这些占位符自动替换成真实的值。</div>
+
+    <h3>方法三：直接手打（不推荐，容易打错）</h3>
+    <p>如果你很熟悉了，也可以直接双击文件名格子，手动输入完整的命名规则，
+    比如直接打 <code>CI-&lt;订单号&gt;.xlsx</code>。
+    注意尖括号和里面的文字必须完全一致，打错了程序无法识别。</p>
+    <p>所以<b>建议使用方法一或方法二</b>，不容易出错。</p>
+
+    <table>
+      <tr><th>占位符</th><th>会被替换成什么</th><th>替换后的例子</th></tr>
+      <tr><td><code>&lt;订单号&gt;</code></td><td>你填的订单号</td><td>XS-GAM2508056NH</td></tr>
+      <tr><td><code>&lt;客户名称&gt;</code></td><td>你选的客户名称</td><td>BAKER HUGHES</td></tr>
+      <tr><td><code>&lt;客户PO号&gt;</code></td><td>客户的PO号</td><td>PO-12345</td></tr>
+      <tr><td><code>&lt;产品信息&gt;</code></td><td>产品信息</td><td>戊二醛 200KG</td></tr>
+      <tr><td><code>&lt;日期&gt;</code></td><td>创建当天日期</td><td>20250821</td></tr>
+      <tr><td><code>&lt;业务员&gt;</code></td><td>你选的业务员名字</td><td>张三</td></tr>
+      <tr><td><code>&lt;SHXY编号&gt;</code></td><td>备用编号</td><td>SHXY</td></tr>
+    </table>
+
+    <h3>选择模板文件（新增模板不用改代码）</h3>
+    <p>如果公司新增了模板文件（比如一个新的 Excel 表格），不需要改代码：</p>
+    <ol>
+      <li>把新模板文件放到你设置的<b>「模板文件目录」</b>里（可以建子文件夹分类）。</li>
+      <li>打开模板编辑器，选中对应文件夹节点，在 ref_files 表格中新增一行。</li>
+      <li>点 <span class="btn">📂 选择模板文件</span>，直接浏览并选择刚放进去的文件。</li>
+      <li>保存模板即可。以后创建订单就会自动复制这个新模板文件。</li>
+    </ol>
+    <div class="tip">模板文件目录里放什么文件，编辑器里就能选到什么文件，完全不需要改代码。</div>
     """
 
     history = """

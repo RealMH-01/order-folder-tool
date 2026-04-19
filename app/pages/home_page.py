@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """启动页（首页）"""
 
+import os
+
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -127,6 +129,10 @@ class HomePage(QWidget):
         self.btn_scan.setObjectName("SecondaryButton")
         self.btn_scan.clicked.connect(self._click_scan_import)
 
+        self.btn_cleanup = QPushButton("🧹 整理已有订单文件夹")
+        self.btn_cleanup.setObjectName("SecondaryButton")
+        self.btn_cleanup.clicked.connect(self._click_cleanup)
+
         self.btn_templates = QPushButton("🗂 模板管理")
         self.btn_templates.setObjectName("SecondaryButton")
         self.btn_templates.clicked.connect(self.request_templates.emit)
@@ -139,14 +145,16 @@ class HomePage(QWidget):
         self.btn_help.setObjectName("SecondaryButton")
         self.btn_help.clicked.connect(self.request_help.emit)
 
-        # 四个底部按钮等宽整齐
-        for _b in (self.btn_scan, self.btn_templates,
+        # 底部按钮等宽整齐
+        for _b in (self.btn_scan, self.btn_cleanup, self.btn_templates,
                    self.btn_history, self.btn_help):
             _b.setMinimumWidth(140)
             _b.setFixedHeight(36)
 
         bottom.addStretch(1)
         bottom.addWidget(self.btn_scan)
+        bottom.addSpacing(12)
+        bottom.addWidget(self.btn_cleanup)
         bottom.addSpacing(12)
         bottom.addWidget(self.btn_templates)
         bottom.addSpacing(12)
@@ -288,7 +296,135 @@ class HomePage(QWidget):
         self.btn_single.setEnabled(ok)
         self.btn_batch.setEnabled(ok)
         self.btn_scan.setEnabled(ok)
+        self.btn_cleanup.setEnabled(ok)
         self.btn_templates.setEnabled(ok)
         self.btn_history.setEnabled(ok)
         # 帮助页面不需要根目录，始终可点
         self.btn_help.setEnabled(True)
+
+    # -------- 整理已有订单文件夹（功能 D） --------
+    def _click_cleanup(self):
+        if not self._check_root():
+            return
+        self._auto_save_root_if_needed()
+
+        from PyQt5.QtWidgets import (
+            QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit,
+            QPushButton
+        )
+        from ..core import folder_builder
+        from ..dialogs.folder_cleanup import FolderCleanupDialog
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("整理已有订单文件夹")
+        dlg.resize(560, 320)
+        form = QFormLayout(dlg)
+
+        # 订单文件夹路径
+        h_path = QHBoxLayout()
+        edit_folder = QLineEdit()
+        edit_folder.setPlaceholderText("选择要整理的订单文件夹…")
+        btn_pick = QPushButton("浏览…")
+
+        def _pick():
+            d = QFileDialog.getExistingDirectory(
+                dlg, "选择订单文件夹", edit_folder.text() or self.storage.root_dir or ""
+            )
+            if d:
+                edit_folder.setText(d)
+                # 自动根据文件夹名填订单号
+                base = d.rstrip("/\\").split("/")[-1].split("\\")[-1]
+                if base and not edit_order_no.text().strip():
+                    edit_order_no.setText(base)
+        btn_pick.clicked.connect(_pick)
+        h_path.addWidget(edit_folder, 1)
+        h_path.addWidget(btn_pick)
+        w_path = QWidget()
+        w_path.setLayout(h_path)
+        form.addRow("订单文件夹：", w_path)
+
+        # 订单号
+        edit_order_no = QLineEdit()
+        edit_order_no.setPlaceholderText("例如 XS-NEW001NH")
+        form.addRow("订单号：", edit_order_no)
+
+        # 客户名称
+        edit_customer = QLineEdit()
+        edit_customer.setPlaceholderText("用于替换 <客户名称> 占位符")
+        form.addRow("客户名称：", edit_customer)
+
+        # 模板选择
+        cmb_template = QComboBox()
+        tpl_list = self.storage.list_template_files()
+        tpl_entries = []
+        for fn in tpl_list.get("standard", []):
+            tpl = self.storage.load_template(fn)
+            if tpl:
+                tpl_entries.append((f"[标准] {tpl.get('display_name', fn)}", fn))
+        for fn in tpl_list.get("salesperson", []):
+            tpl = self.storage.load_template(fn)
+            if tpl:
+                tpl_entries.append((f"[业务员] {tpl.get('display_name', fn)}", fn))
+        for fn in tpl_list.get("customer", []):
+            tpl = self.storage.load_template(fn)
+            if tpl:
+                tpl_entries.append((f"[客户] {tpl.get('display_name', fn)}", fn))
+        for label, _ in tpl_entries:
+            cmb_template.addItem(label)
+        form.addRow("使用模板：", cmb_template)
+
+        # 产品类别
+        cmb_cat = QComboBox()
+        cmb_cat.addItems(["戊二醛", "其他产品"])
+        form.addRow("产品类别：", cmb_cat)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form.addRow(btns)
+
+        if dlg.exec_() != dlg.Accepted:
+            return
+
+        order_folder = edit_folder.text().strip()
+        order_no = edit_order_no.text().strip()
+        customer = edit_customer.text().strip()
+        idx = cmb_template.currentIndex()
+
+        if not order_folder or not os.path.isdir(order_folder):
+            QMessageBox.warning(self, "提示", "请选择一个存在的订单文件夹")
+            return
+        if not order_no:
+            QMessageBox.warning(self, "提示", "请填写订单号")
+            return
+        if idx < 0 or idx >= len(tpl_entries):
+            QMessageBox.warning(self, "提示", "请选择一个模板")
+            return
+
+        tpl_fn = tpl_entries[idx][1]
+        template = self.storage.load_template(tpl_fn)
+        if not template:
+            QMessageBox.warning(self, "提示", f"模板 {tpl_fn} 读取失败")
+            return
+
+        order = {
+            "order_no": order_no,
+            "customer": customer,
+            "product_info": "",
+            "po_no": "",
+            "product_category": cmb_cat.currentText(),
+            "salesperson": "",
+            "needs_inspection": False,
+            "order_type": "外贸" if template.get("type") == "export" else "内贸",
+        }
+        ctx = folder_builder.build_context(order)
+
+        FolderCleanupDialog(
+            order_folder_path=order_folder,
+            order_no=order_no,
+            template=template,
+            ctx=ctx,
+            parent=self,
+            product_category=order["product_category"],
+            needs_inspection=False,
+        ).exec_()

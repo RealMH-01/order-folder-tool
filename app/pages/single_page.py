@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 from ..core import folder_builder
 from ..dialogs.template_preview import TemplatePreviewDialog
 from ..dialogs.scan_preview import ScanPreviewDialog
+from ..dialogs.folder_cleanup import FolderCleanupDialog
 
 
 class SinglePage(QWidget):
@@ -340,7 +341,7 @@ class SinglePage(QWidget):
         # 但允许用户修改。修改后会被视为新的"客户目录"基路径。
         order_folder_preview = os.path.join(base_path, order["order_no"])
         dlg = ScanPreviewDialog(order_folder_preview, template_folders, extras,
-                                parent=self)
+                                parent=self, ctx=ctx)
         if dlg.exec_() != dlg.Accepted:
             return
         final_order_folder = dlg.get_target_path() or order_folder_preview
@@ -376,7 +377,7 @@ class SinglePage(QWidget):
         self._append_history(order, result)
 
         # 展示结果（使用订单号文件夹路径作为"打开"入口）
-        self._show_result(order, result["base_path"], result)
+        self._show_result(order, result["base_path"], result, ctx=ctx)
 
     def _append_history(self, order, result):
         cfg = self.storage.load_config()
@@ -397,7 +398,7 @@ class SinglePage(QWidget):
         }
         self.storage.append_history(record)
 
-    def _show_result(self, order, base_path, result):
+    def _show_result(self, order, base_path, result, ctx=None):
         from PyQt5.QtWidgets import QDialog, QPlainTextEdit, QPushButton, QVBoxLayout
         dlg = QDialog(self)
         dlg.setWindowTitle("创建完成")
@@ -435,10 +436,27 @@ class SinglePage(QWidget):
         h = QHBoxLayout()
         btn_open = QPushButton("打开订单文件夹")
         btn_open.clicked.connect(lambda: self._open_path(base_path))
+        # 功能 D：整理文件夹入口
+        btn_cleanup = QPushButton("🧹 整理文件夹")
+        btn_cleanup.setObjectName("SecondaryButton")
+
+        def _open_cleanup():
+            FolderCleanupDialog(
+                order_folder_path=base_path,
+                order_no=order.get("order_no", ""),
+                template=self._current_template,
+                ctx=ctx or folder_builder.build_context(order),
+                parent=dlg,
+                product_category=order.get("product_category", "戊二醛"),
+                needs_inspection=bool(order.get("needs_inspection", False)),
+            ).exec_()
+        btn_cleanup.clicked.connect(_open_cleanup)
+
         btn_close = QPushButton("关闭")
         btn_close.setObjectName("SecondaryButton")
         btn_close.clicked.connect(dlg.accept)
         h.addStretch(1)
+        h.addWidget(btn_cleanup)
         h.addWidget(btn_open)
         h.addWidget(btn_close)
         v.addLayout(h)

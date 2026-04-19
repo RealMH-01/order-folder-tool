@@ -192,9 +192,12 @@ class TemplatesPage(QWidget):
             QMessageBox.warning(self, "错误", "标准模板缺失")
             return
         # 编辑一个副本
+        cfg = self.storage.load_config()
+        tpl_dir = cfg.get("template_files_dir", "") or ""
         dlg = TemplateEditorDialog(copy.deepcopy(base), base_template=base,
                                    title=f"新建模板（基于 标准 {type_}）",
-                                   parent=self)
+                                   parent=self,
+                                   template_files_dir=tpl_dir)
         if dlg.exec_() != dlg.Accepted:
             return
         edited = dlg.result_template()
@@ -211,8 +214,11 @@ class TemplatesPage(QWidget):
             return
         order_type = "外贸" if tpl.get("type") == "export" else "内贸"
         base = self.storage.load_template(self.storage.standard_template_filename(order_type))
+        cfg = self.storage.load_config()
+        tpl_dir = cfg.get("template_files_dir", "") or ""
         dlg = TemplateEditorDialog(copy.deepcopy(tpl), base_template=base,
-                                   title=f"编辑 - {fn}", parent=self)
+                                   title=f"编辑 - {fn}", parent=self,
+                                   template_files_dir=tpl_dir)
         if dlg.exec_() != dlg.Accepted:
             return
         edited = dlg.result_template()
