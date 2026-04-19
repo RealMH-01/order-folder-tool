@@ -251,7 +251,7 @@ def test_chinese_path():
     result = folder_builder.execute_build(order, template, customer_dir, tpl_dir)
     order_folder = result["base_path"]
     assert (Path(order_folder) / "商检资料").is_dir()
-    assert (Path(order_folder) / "生产发货" / "生产通知单-外贸-订单-中文001.doc").is_file()
+    assert (Path(order_folder) / "生产发货" / "生产通知单-外贸-订单-中文001_对照.doc").is_file()
     assert Path(result["checklist_path"]).is_file()
     print("  OK: 中文路径和文件名处理正常")
 
@@ -701,12 +701,13 @@ def main():
             "needs_inspection": False,
         },
         expected_files=[
-            "CG-XS-GAM001.xlsx",
-            "SD/CI-XS-GAM001.xlsx",
-            "SD/PL-XS-GAM001.xls",
-            "货代资料/订舱托书-XS-GAM001.doc",
-            "生产发货/生产通知单-XS-GAM001.doc",
-            "生产发货/发货通知单-XS-GAM001.docx",
+            # 功能 C：复制出来的空白模板文件自动带 "_对照" 后缀
+            "CG-XS-GAM001_对照.xlsx",
+            "SD/CI-XS-GAM001_对照.xlsx",
+            "SD/PL-XS-GAM001_对照.xls",
+            "货代资料/订舱托书-XS-GAM001_对照.doc",
+            "生产发货/生产通知单-XS-GAM001_对照.doc",
+            "生产发货/发货通知单-XS-GAM001_对照.docx",
         ],
     )
 
@@ -721,12 +722,12 @@ def main():
             "needs_inspection": True,
         },
         expected_files=[
-            "CG-XS-OTH001.xlsx",
-            "SD/CI-XS-OTH001.xlsx",
-            "SD/PL-XS-OTH001.xls",
-            "货代资料/订舱托书-XS-OTH001.doc",
-            "生产发货/生产通知单-XS-OTH001.xlsx",
-            "生产发货/发货通知单-XS-OTH001.xlsx",
+            "CG-XS-OTH001_对照.xlsx",
+            "SD/CI-XS-OTH001_对照.xlsx",
+            "SD/PL-XS-OTH001_对照.xls",
+            "货代资料/订舱托书-XS-OTH001_对照.doc",
+            "生产发货/生产通知单-XS-OTH001_对照.xlsx",
+            "生产发货/发货通知单-XS-OTH001_对照.xlsx",
         ],
     )
 
@@ -741,9 +742,9 @@ def main():
             "needs_inspection": False,
         },
         expected_files=[
-            "生产、采购、发货/生产通知单-NS-GAM001.xlsx",
-            "生产、采购、发货/发货通知单-NS-GAM001.xlsx",
-            "生产、采购、发货/采购合同-NS-GAM001.xlsx",
+            "生产、采购、发货/生产通知单-NS-GAM001_对照.xlsx",
+            "生产、采购、发货/发货通知单-NS-GAM001_对照.xlsx",
+            "生产、采购、发货/采购合同-NS-GAM001_对照.xlsx",
         ],
     )
 
@@ -758,7 +759,7 @@ def main():
             "needs_inspection": False,
         },
         expected_files=[
-            "生产、采购、发货/采购合同-NS-OTH001.xlsx",  # 只有通用 CG 会被复制
+            "生产、采购、发货/采购合同-NS-OTH001_对照.xlsx",  # 只有通用 CG 会被复制
         ],
     )
     # 生产/发货通知单不应存在

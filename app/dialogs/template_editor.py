@@ -2,14 +2,15 @@
 """模板编辑对话框（可勾选的树 + 右键菜单 + ref_files 编辑）"""
 
 import copy
+import os
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor, QFont
 from PyQt5.QtWidgets import (
-    QAction, QComboBox, QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout,
-    QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget
+    QAction, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QGridLayout,
+    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
+    QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget,
+    QTreeWidgetItem, QVBoxLayout, QWidget
 )
 
 
@@ -25,13 +26,15 @@ class TemplateEditorDialog(QDialog):
     base_template：标准模板，用于标注哪些节点是"标准节点"（不可删除）
     """
 
-    def __init__(self, template, base_template=None, title="编辑模板", parent=None):
+    def __init__(self, template, base_template=None, title="编辑模板",
+                 parent=None, template_files_dir: str = ""):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(980, 640)
+        self.resize(1020, 680)
         self._template = copy.deepcopy(template)
         self._base_template = base_template or template
         self._standard_paths = self._collect_paths(self._base_template)
+        self._template_files_dir = template_files_dir or ""
         self._build_ui()
         self._populate()
 
@@ -78,6 +81,62 @@ class TemplateEditorDialog(QDialog):
         # 右：ref_files 编辑
         right = QVBoxLayout()
         right.addWidget(QLabel("该文件夹下的参考文件（ref_files）"))
+
+        # 功能 A：提示文字
+        hint_label = QLabel(
+            "💡 想改文件名？用上面的「常用格式」下拉框最快——选格式、输前缀就行。"
+            "也可以点占位符按钮插入，或者双击文件名直接编辑。"
+        )
+        hint_label.setStyleSheet("color:#888; font-size:12px;")
+        hint_label.setWordWrap(True)
+        right.addWidget(hint_label)
+
+        # 功能 B：占位符快捷按钮 + 常用格式下拉框
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(4)
+        # 占位符按钮
+        placeholder_defs = [
+            ("<订单号>", True),   # 醒目高亮
+            ("<客户名称>", False),
+            ("<客户PO号>", False),
+            ("<日期>", False),
+            ("<业务员>", False),
+        ]
+        for text, highlight in placeholder_defs:
+            btn = QPushButton(text)
+            btn.setObjectName("SecondaryButton" if not highlight else "")
+            btn.setFixedHeight(26)
+            if highlight:
+                btn.setStyleSheet(
+                    "background:#1976D2;color:white;"
+                    "font-weight:bold;padding:2px 8px;border-radius:4px;"
+                )
+            else:
+                btn.setStyleSheet("padding:2px 6px;font-size:12px;")
+            btn.clicked.connect(
+                lambda _=False, t=text: self._insert_placeholder(t))
+            quick_row.addWidget(btn)
+
+        quick_row.addSpacing(12)
+        quick_row.addWidget(QLabel("常用格式："))
+        self.cmb_format = QComboBox()
+        self.cmb_format.addItems([
+            "前缀-<订单号>.xlsx",
+            "前缀-<订单号>.xls",
+            "前缀-<订单号>.pdf",
+            "前缀-<订单号>.doc",
+            "前缀-<订单号>-<客户名称>.xlsx",
+            "前缀-<订单号>-<客户名称>.pdf",
+        ])
+        self.cmb_format.setMinimumWidth(220)
+        quick_row.addWidget(self.cmb_format)
+        btn_apply_fmt = QPushButton("应用格式")
+        btn_apply_fmt.setObjectName("SecondaryButton")
+        btn_apply_fmt.clicked.connect(self._apply_format)
+        quick_row.addWidget(btn_apply_fmt)
+        quick_row.addStretch(1)
+        right.addLayout(quick_row)
+
         self.tbl = QTableWidget(0, 3)
         self.tbl.setHorizontalHeaderLabels(["文件名 (filename)", "来源 (source)",
                                              "模板文件 (file_template)"])
@@ -91,10 +150,15 @@ class TemplateEditorDialog(QDialog):
         b_del = QPushButton("- 删除选中")
         b_del.setObjectName("SecondaryButton")
         b_del.clicked.connect(self._del_ref)
+        # 功能 E：浏览选择模板文件
+        b_browse_tpl = QPushButton("📂 选择模板文件")
+        b_browse_tpl.setObjectName("SecondaryButton")
+        b_browse_tpl.clicked.connect(self._browse_template_file)
         b_apply = QPushButton("✔ 应用修改到当前文件夹")
         b_apply.clicked.connect(self._apply_refs_to_node)
         row_ops.addWidget(b_add)
         row_ops.addWidget(b_del)
+        row_ops.addWidget(b_browse_tpl)
         row_ops.addStretch(1)
         row_ops.addWidget(b_apply)
         right.addLayout(row_ops)
@@ -181,6 +245,99 @@ class TemplateEditorDialog(QDialog):
         rows = sorted({i.row() for i in self.tbl.selectedIndexes()}, reverse=True)
         for r in rows:
             self.tbl.removeRow(r)
+
+    # 功能 B：占位符快捷插入
+    def _insert_placeholder(self, placeholder: str):
+        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
+        if rows:
+            r = rows[0].row()
+        else:
+            r = self.tbl.currentRow()
+        if r < 0:
+            QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
+            return
+        item = self.tbl.item(r, 0)
+        if item is None:
+            item = QTableWidgetItem("")
+            self.tbl.setItem(r, 0, item)
+        new_text = (item.text() or "") + placeholder
+        item.setText(new_text)
+
+    # 功能 B：常用格式一键应用
+    def _apply_format(self):
+        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
+        if rows:
+            r = rows[0].row()
+        else:
+            r = self.tbl.currentRow()
+        if r < 0:
+            QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
+            return
+        fmt = self.cmb_format.currentText()
+        prefix, ok = QInputDialog.getText(
+            self, "请输入前缀",
+            "例如 CI、PL、CG、BL：")
+        if not ok:
+            return
+        prefix = prefix.strip()
+        if not prefix:
+            QMessageBox.information(self, "提示", "前缀不能为空")
+            return
+        new_name = fmt.replace("前缀", prefix)
+        item = self.tbl.item(r, 0)
+        if item is None:
+            item = QTableWidgetItem(new_name)
+            self.tbl.setItem(r, 0, item)
+        else:
+            item.setText(new_name)
+
+    # 功能 E：浏览并选择模板文件
+    def _browse_template_file(self):
+        rows = self.tbl.selectionModel().selectedRows() if self.tbl.selectionModel() else []
+        if rows:
+            r = rows[0].row()
+        else:
+            r = self.tbl.currentRow()
+        if r < 0:
+            QMessageBox.information(self, "提示", "请先选中一行（在文件名表格中点击一行）")
+            return
+        if not self._template_files_dir or not os.path.isdir(self._template_files_dir):
+            QMessageBox.information(
+                self, "提示",
+                "请先在首页设置模板文件目录。\n"
+                "（首页 → 「模板文件目录」 → 浏览并保存）"
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择模板文件",
+            self._template_files_dir,
+            "所有文件 (*.*)"
+        )
+        if not path:
+            return
+        try:
+            rel = os.path.relpath(path, self._template_files_dir)
+        except ValueError:
+            QMessageBox.warning(
+                self, "提示",
+                "所选文件不在模板文件目录内，请选择该目录下的文件。"
+            )
+            return
+        # 防止用户跑到目录外 (../xxx)
+        if rel.startswith(".."):
+            QMessageBox.warning(
+                self, "提示",
+                "所选文件不在模板文件目录内，请选择该目录下的文件。"
+            )
+            return
+        # 统一用正斜杠，与 default_templates 中的写法保持一致
+        rel = rel.replace("\\", "/")
+        it = self.tbl.item(r, 2)
+        if it is None:
+            it = QTableWidgetItem(rel)
+            self.tbl.setItem(r, 2, it)
+        else:
+            it.setText(rel)
 
     def _apply_refs_to_node(self):
         items = self.tree.selectedItems()

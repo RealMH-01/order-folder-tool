@@ -299,6 +299,10 @@ def copy_template_files(base_path: str,
             filled_name = replace_placeholders(raw_name, ctx)
             if "." not in os.path.basename(filled_name):
                 filled_name += src.suffix
+            # 功能 C：复制的空白模板文件自动添加 "_对照" 后缀，
+            # 用于与用户实际工作文件区分，便于后续「整理文件夹」识别删除。
+            name_part, ext_part = os.path.splitext(filled_name)
+            filled_name = f"{name_part}_对照{ext_part}"
             dst = target_folder / filled_name
             try:
                 target_folder.mkdir(parents=True, exist_ok=True)
@@ -401,15 +405,22 @@ def generate_checklist_excel(order_folder_path: str,
             has_template = "是" if file_template else "否"
             source = rf.get("source", "")
 
+            # 功能 C：如果该文件是从模板复制出来的空白对照文件，
+            # 文件名需带 "_对照" 后缀，与 copy_template_files 保持一致。
+            display_name = filled_name
+            if file_template and resolved_tpl:
+                name_part, ext_part = os.path.splitext(filled_name)
+                display_name = f"{name_part}_对照{ext_part}"
+
             # 是否已复制
-            dst_path = str(target_folder / filled_name)
+            dst_path = str(target_folder / display_name)
             already_copied = dst_path in copied_set
             check_mark = "✓" if already_copied else ""
             remark = "已从模板复制" if already_copied else ""
 
             ws.cell(row=row, column=1, value=check_mark).alignment = center
             ws.cell(row=row, column=2, value=folder_display).alignment = left
-            ws.cell(row=row, column=3, value=filled_name).alignment = left
+            ws.cell(row=row, column=3, value=display_name).alignment = left
             ws.cell(row=row, column=4, value=source).alignment = left
             ws.cell(row=row, column=5, value=has_template).alignment = center
             ws.cell(row=row, column=6, value=remark).alignment = left
